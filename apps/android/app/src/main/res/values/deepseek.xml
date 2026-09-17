@@ -1,9 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="error_deepseek_search">Web search is unavailable in this DeepSeek version. Choose a conversation topic instead.</string>
-    <string name="error_android_recognition">Speech recognition is unavailable for this language or device. Check the Android speech service and microphone permission, or type instead.</string>
+    <string name="error_android_recognition">Android could not start speech recognition. Check the speech recognition service in phone settings.</string>
     <string name="error_android_speech">Android could not read the reply aloud. Check the speech engine in system settings. You can keep using text conversations.</string>
     <string name="error_android_speech_language">Install an Android text-to-speech voice for this learning language, or use a text conversation.</string>
     <string name="talk_status_thinking">Preparing a reply…</string>
     <string name="talk_status_speaking">Speaking…</string>
+    <string name="error_android_recognition_language">The Android speech service does not support this learning language. Choose another recognition service in phone settings.</string>
+    <string name="error_android_recognition_model">Download the speech recognition model for this learning language in the Android speech service settings.</string>
+    <string name="error_android_recognition_network">The Android speech service could not connect. Check your internet connection.</string>
+    <string name="error_android_recognition_busy">The Android speech service is busy. Close other apps using the microphone and try voice again later.</string>
+    <string name="notice_voice_continue_text">%1$s Voice has stopped. You can continue this conversation with Type instead.</string>
+    <string name="talk_view_conversation">View conversation</string>
 </resources>

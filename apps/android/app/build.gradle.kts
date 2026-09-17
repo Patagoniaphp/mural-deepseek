@@ -24,8 +24,8 @@ android {
         applicationId = "chat.mural.android"
         minSdk = 26
         targetSdk = 36
-        versionCode = 8
-        versionName = "0.1"
+        versionCode = 9
+        versionName = "0.1.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // DeepSeek builds use a personal key; the hosted backend still uses its original provider.
         buildConfigField("String", "MANAGED_API_ORIGIN", buildString(""))

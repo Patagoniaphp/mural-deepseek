@@ -55,6 +55,7 @@ class AndroidVoiceTransport(context: Context, private val scope: CoroutineScope)
     private var instructions = ""
     private var api: APIClient? = null
     private var recognizer: SpeechRecognizer? = null
+    private var recognitionRecovery: SpeechRecognitionRecovery? = null
     private var tts: TextToSpeech? = null
     private var focus: AudioFocusRequest? = null
     private var requestJob: Job? = null
@@ -65,14 +66,16 @@ class AndroidVoiceTransport(context: Context, private val scope: CoroutineScope)
 
     suspend fun connect(client: APIClient, policy: String, locale: String) = withContext(Dispatchers.Main.immediate) {
         disconnect()
+        lastDuration = 0.0
         val token = generation
         if (app.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             throw failure(R.string.error_transport_microphone)
         }
-        if (!SpeechRecognizer.isRecognitionAvailable(app) &&
-            !(Build.VERSION.SDK_INT >= 31 && SpeechRecognizer.isOnDeviceRecognitionAvailable(app))) {
-            throw failure(R.string.error_android_recognition)
-        }
+        recognitionRecovery = SpeechRecognitionRecovery(
+            onDeviceAvailable = Build.VERSION.SDK_INT >= 31 && SpeechRecognizer.isOnDeviceRecognitionAvailable(app),
+            systemAvailable = SpeechRecognizer.isRecognitionAvailable(app),
+        )
+        if (recognitionRecovery?.backend == null) throw recognitionFailure()
         active = true
         startedAt = SystemClock.elapsedRealtime()
         api = client; instructions = policy; language = locale
@@ -191,12 +194,12 @@ class AndroidVoiceTransport(context: Context, private val scope: CoroutineScope)
         }
     }
 
-    private fun scheduleListening() {
+    private fun scheduleListening(delayMS: Long = 400) {
         listenJob?.cancel()
         if (!active || muted || inputPaused || isBusy || recognizer != null) return
         val token = generation
         listenJob = scope.launch {
-            delay(400) // Let speaker output settle before opening the microphone.
+            delay(delayMS) // Let speaker output settle before opening the microphone.
             if (current(token) && !muted && !inputPaused && !isBusy && recognizer == null) listen(token)
         }
     }
@@ -205,8 +208,8 @@ class AndroidVoiceTransport(context: Context, private val scope: CoroutineScope)
         val recognition = ++recognitionGeneration
         fun valid() = current(token) && recognition == recognitionGeneration && !muted && !inputPaused
         try {
-            // Prefer on-device speech where available; older devices use their selected speech service.
-            val engine = if (Build.VERSION.SDK_INT >= 31 && SpeechRecognizer.isOnDeviceRecognitionAvailable(app))
+            // Keep using the system service after a local model/service failure.
+            val engine = if (Build.VERSION.SDK_INT >= 31 && recognitionRecovery?.backend == SpeechRecognitionRecovery.Backend.ON_DEVICE)
                 SpeechRecognizer.createOnDeviceSpeechRecognizer(app) else SpeechRecognizer.createSpeechRecognizer(app)
             recognizer = engine
             engine.setRecognitionListener(object : RecognitionListener {
@@ -219,6 +222,7 @@ class AndroidVoiceTransport(context: Context, private val scope: CoroutineScope)
                 override fun onEvent(eventType: Int, params: Bundle?) = Unit
                 override fun onResults(results: Bundle?) {
                     if (!valid()) return
+                    recognitionRecovery?.recognized()
                     val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                         ?.firstOrNull()?.trim()?.take(2_000).orEmpty()
                     stopRecognition()
@@ -226,10 +230,7 @@ class AndroidVoiceTransport(context: Context, private val scope: CoroutineScope)
                 }
                 override fun onError(error: Int) {
                     if (!valid()) return
-                    stopRecognition()
-                    if (error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
-                        scheduleListening()
-                    } else fail(failure(R.string.error_android_recognition))
+                    recoverRecognition(error)
                 }
             })
             engine.startListening(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
@@ -238,7 +239,30 @@ class AndroidVoiceTransport(context: Context, private val scope: CoroutineScope)
                 putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
                 putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
             })
-        } catch (_: Exception) { if (current(token)) fail(failure(R.string.error_android_recognition)) }
+        } catch (_: SecurityException) {
+            if (valid()) recoverRecognition(SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS)
+        } catch (_: Exception) {
+            if (valid()) recoverRecognition(SpeechRecognizer.ERROR_CLIENT)
+        }
+    }
+
+    private fun recoverRecognition(error: Int) {
+        val retry = recognitionRecovery?.retryAfter(error) == true
+        stopRecognition() // Invalidate callbacks before cancel/destroy can deliver stale errors.
+        if (retry) scheduleListening(if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) 1_000 else 400)
+        else fail(recognitionFailure(error))
+    }
+
+    private fun recognitionFailure(error: Int? = null): RecognitionException {
+        val resource = when (error) {
+            SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> R.string.error_transport_microphone
+            SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED -> R.string.error_android_recognition_language
+            SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE -> R.string.error_android_recognition_model
+            SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> R.string.error_android_recognition_network
+            SpeechRecognizer.ERROR_RECOGNIZER_BUSY, SpeechRecognizer.ERROR_TOO_MANY_REQUESTS -> R.string.error_android_recognition_busy
+            else -> R.string.error_android_recognition
+        }
+        return RecognitionException(app.getString(resource))
     }
 
     private fun stopRecognition() {
@@ -269,6 +293,7 @@ class AndroidVoiceTransport(context: Context, private val scope: CoroutineScope)
         lastDuration = elapsedSeconds
         ++generation; active = false
         stopRecognition()
+        recognitionRecovery = null
         requestJob?.cancel(); requestJob = null
         speechTimeout?.cancel(); speechTimeout = null
         lastUtterance = null
@@ -277,5 +302,6 @@ class AndroidVoiceTransport(context: Context, private val scope: CoroutineScope)
         api = null; history.clear(); hints.clear(); muted = false; inputPaused = false
         onLevels?.invoke(0.0, 0.0); busy(false)
     }
-    class TransportException(message: String) : IOException(message)
+    open class TransportException(message: String) : IOException(message)
+    class RecognitionException(message: String) : TransportException(message)
 }

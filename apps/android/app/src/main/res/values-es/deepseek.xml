@@ -1,9 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="error_deepseek_search">La búsqueda web no está disponible en esta versión con DeepSeek. Elige un tema de conversación.</string>
-    <string name="error_android_recognition">El reconocimiento de voz no está disponible para este idioma o dispositivo. Revisa el servicio de voz de Android y el permiso de micrófono, o escribe.</string>
+    <string name="error_android_recognition">Android no pudo iniciar el reconocimiento. Revisa el servicio de reconocimiento de voz en los ajustes del teléfono.</string>
     <string name="error_android_speech">Android no pudo leer la respuesta. Revisa el motor de voz en los ajustes del sistema. Puedes seguir conversando por texto.</string>
     <string name="error_android_speech_language">Instala una voz de Android para el idioma que practicas, o usa una conversación escrita.</string>
     <string name="talk_status_thinking">Preparando una respuesta…</string>
     <string name="talk_status_speaking">Hablando…</string>
+    <string name="error_android_recognition_language">El servicio de voz de Android no admite el idioma que practicas. Elige otro servicio de reconocimiento en los ajustes del teléfono.</string>
+    <string name="error_android_recognition_model">Descarga el modelo de reconocimiento del idioma que practicas en los ajustes del servicio de voz de Android.</string>
+    <string name="error_android_recognition_network">El servicio de voz de Android no pudo conectarse. Revisa tu conexión a internet.</string>
+    <string name="error_android_recognition_busy">El servicio de voz de Android está ocupado. Cierra otras apps que usen el micrófono e intenta usar la voz más tarde.</string>
+    <string name="notice_voice_continue_text">%1$s La voz se detuvo. Puedes continuar esta conversación con Escribir.</string>
+    <string name="talk_view_conversation">Ver conversación</string>
 </resources>

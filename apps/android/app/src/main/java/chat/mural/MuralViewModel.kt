@@ -288,7 +288,7 @@ class MuralViewModel(application: Application) : AndroidViewModel(application) {
         transport.onUsage = { usage -> if (state == "active") updateSession { addUsage(it, usage) } }
         transport.onBusy = { working = it }
         transport.onClosed = { seconds -> updateSession { it.voiceSeconds = seconds }; finish(true) }
-        transport.onFailure = { fail(it, R.string.error_voice_connect_failed) }
+        transport.onFailure = ::voiceFailed
         transport.onLevels = { input, output ->
             inputLevel = input; outputLevel = output
             if (state == "active" && voiceSession) {
@@ -699,9 +699,25 @@ class MuralViewModel(application: Application) : AndroidViewModel(application) {
         connectionJob = viewModelScope.launch {
             try { transport.connect(api, instructions, module.locale) }
             catch (cancelled: CancellationException) { throw cancelled }
-            catch (e: Exception) { if (session?.id == id && isRunning) fail(e, R.string.error_voice_connect_failed) }
+            catch (e: Exception) { if (session?.id == id && isRunning) voiceFailed(e) }
         }
     }
+    private fun voiceFailed(error: Throwable) {
+        if (error !is AndroidVoiceTransport.RecognitionException ||
+            !voiceSession || state !in listOf("connecting", "active")) {
+            fail(error, R.string.error_voice_connect_failed)
+            return
+        }
+        // Recognition is optional: retain this transcript and session for typed replies.
+        updateSession { it.voiceSeconds = transport.elapsedSeconds }
+        transport.disconnect(); connectionJob?.cancel()
+        voiceSession = false; isMuted = false; working = false
+        inputLevel = 0.0; outputLevel = 0.0; inactivitySeconds = null
+        state = "active"
+        notice = getApplication<Application>().getString(R.string.notice_voice_continue_text, error.message.orEmpty())
+        startDurationChecks()
+    }
+
     fun end(reason: String = "Ended by you") {
         if (state !in listOf("active", "connecting")) return
         val connecting = state == "connecting"
