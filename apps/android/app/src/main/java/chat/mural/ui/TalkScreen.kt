@@ -134,12 +134,14 @@ fun TalkScreen(
         Spacer(Modifier.height(if (compact) 8.dp else 24.dp - 16.dp * readingSpace))
         MuralOrb(
             energy = maxOf(vm.outputLevel.toFloat(), vm.inputLevel.toFloat() * .45f),
-            listening = vm.state == "active" && vm.isVoiceSession && !vm.isMuted,
+            listening = vm.state == "active" && vm.isVoiceSession && !vm.isMuted && !vm.working,
             active = vm.state != "closing",
             modifier = Modifier.size(orbSize),
         )
         Box(Modifier.fillMaxWidth().padding(top = if (compact) 8.dp else 12.dp).heightIn(min = 40.dp), contentAlignment = Alignment.Center) {
-            val status = statusText(vm.state, vm.isMuted, vm.isVoiceSession, vm.inactivitySeconds)
+            val status = if (vm.state == "active" && vm.isVoiceSession && vm.working)
+                stringResource(if (vm.outputLevel > 0.0) R.string.talk_status_speaking else R.string.talk_status_thinking)
+            else statusText(vm.state, vm.isMuted, vm.isVoiceSession, vm.inactivitySeconds)
             val statusCaption = buildAnnotatedString {
                 if (vm.inactivitySeconds != null) {
                     withStyle(SpanStyle(fontWeight = FontWeight.Medium, fontFeatureSettings = "tnum")) { append(status.substringBefore('\n')) }

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="error_deepseek_search">Web search is unavailable in this DeepSeek version. Choose a conversation topic instead.</string>
+    <string name="error_android_recognition">Speech recognition is unavailable for this language or device. Check the Android speech service and microphone permission, or type instead.</string>
+    <string name="error_android_speech">Android could not read the reply aloud. Check the speech engine in system settings. You can keep using text conversations.</string>
+    <string name="error_android_speech_language">Install an Android text-to-speech voice for this learning language, or use a text conversation.</string>
+    <string name="talk_status_thinking">Preparing a reply…</string>
+    <string name="talk_status_speaking">Speaking…</string>
+</resources>

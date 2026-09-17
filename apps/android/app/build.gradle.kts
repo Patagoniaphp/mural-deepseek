@@ -27,9 +27,10 @@ android {
         versionCode = 8
         versionName = "0.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        buildConfigField("String", "MANAGED_API_ORIGIN", buildString(muralConfiguration("mural.apiOrigin")))
-        buildConfigField("String", "GOOGLE_SERVER_CLIENT_ID", buildString(muralConfiguration("mural.googleServerClientID")))
-        buildConfigField("boolean", "MINUTE_PURCHASES_ENABLED", muralMinutePurchases)
+        // DeepSeek builds use a personal key; the hosted backend still uses its original provider.
+        buildConfigField("String", "MANAGED_API_ORIGIN", buildString(""))
+        buildConfigField("String", "GOOGLE_SERVER_CLIENT_ID", buildString(""))
+        buildConfigField("boolean", "MINUTE_PURCHASES_ENABLED", "false")
         buildConfigField("String", "PURCHASE_CHANNEL", buildString(muralPurchaseChannel))
         buildConfigField("String", "MINUTE_PURCHASE_ENVIRONMENT", buildString(muralMinuteEnvironment))
     }
@@ -81,7 +82,6 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.1")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("io.github.webrtc-sdk:android:150.7871.01")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.1")
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")

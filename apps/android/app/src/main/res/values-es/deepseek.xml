@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="error_deepseek_search">La búsqueda web no está disponible en esta versión con DeepSeek. Elige un tema de conversación.</string>
+    <string name="error_android_recognition">El reconocimiento de voz no está disponible para este idioma o dispositivo. Revisa el servicio de voz de Android y el permiso de micrófono, o escribe.</string>
+    <string name="error_android_speech">Android no pudo leer la respuesta. Revisa el motor de voz en los ajustes del sistema. Puedes seguir conversando por texto.</string>
+    <string name="error_android_speech_language">Instala una voz de Android para el idioma que practicas, o usa una conversación escrita.</string>
+    <string name="talk_status_thinking">Preparando una respuesta…</string>
+    <string name="talk_status_speaking">Hablando…</string>
+</resources>
