@@ -1,5 +1,7 @@
 # APK de prueba Android con DeepSeek
 
+Versión posterior: [Android DeepSeek 0.1.1: texto y recuperación de voz](android-deepseek-0.1.1.md). Este documento conserva los resultados del APK 0.1.
+
 Fecha: 2026-09-17. Repositorio: `Patagoniaphp/mural-deepseek`.
 
 ## Código y artefacto
