@@ -32,9 +32,11 @@ class MuralViewModelTest {
 
     @Test fun everyApiAndCredentialReasonMapsToANonZeroResource() {
         val reasons = listOf(
+            APIClient.APIException.SearchUnavailable,
             APIClient.APIException.MissingKey,
             APIClient.APIException.Refused,
             APIClient.APIException.InvalidResponse,
+            APIClient.APIException.Http(402),
             APIClient.APIException.Http(401),
             APIClient.APIException.Http(403),
             APIClient.APIException.Http(429),

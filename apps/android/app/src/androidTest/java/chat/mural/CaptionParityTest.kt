@@ -13,6 +13,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import chat.mural.core.*
 import chat.mural.network.APIClient
+import chat.mural.network.AndroidVoiceTransport
 import okhttp3.*
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
@@ -57,21 +58,19 @@ class CaptionParityTest {
                 val status = responseCode
                 responseGate?.await(15, TimeUnit.SECONDS)
                 val payload = buildJsonObject {
-                    put("status", "completed")
-                    put("output", buildJsonArray { add(buildJsonObject {
-                        put("type", "message"); put("content", buildJsonArray { add(buildJsonObject {
-                            put("type", "output_text"); put("text", reply)
-                        }) })
+                    put("choices", buildJsonArray { add(buildJsonObject {
+                        put("finish_reason", "stop")
+                        put("message", buildJsonObject { put("role", "assistant"); put("content", reply) })
                     }) })
-                    put("usage", buildJsonObject { put("input_tokens", 0); put("output_tokens", 0) })
+                    put("usage", buildJsonObject { put("prompt_tokens", 0); put("completion_tokens", 0) })
                 }
                 Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1).code(status).message(if (status == 200) "OK" else "Fixture error")
                     .body(payload.toString().toResponseBody("application/json".toMediaType())).build()
             }.build()
-            field.set(vm, APIClient("fixture-only", client, "https://offline.invalid/v1/".toHttpUrl()))
+            field.set(vm, APIClient("fixture-only", client, "https://offline.invalid/".toHttpUrl()))
             state("hasKey", true)
             vm.updatePreferences(vm.archive.preferences.copy(learningLanguageID = "zh", meaningLanguage = "English",
-                meaningVisible = true, hasOnboarded = true, aiConsentVersion = 1))
+                meaningVisible = true, hasOnboarded = true, aiConsentVersion = chat.mural.ui.AI_CONSENT_VERSION))
         }
     }
     @Suppress("UNCHECKED_CAST")
@@ -142,8 +141,9 @@ class CaptionParityTest {
         assertTrue(request.toString(), request.toString().contains("Selected: $word"))
         assertTrue(request.toString(), request.toString().contains(sentence))
         assertTrue(request.toString(), request.toString().contains("context of its sentence"))
-        assertFalse(request.getValue("store").jsonPrimitive.boolean)
-        assertTrue(request.getValue("instructions").jsonPrimitive.content.contains(vm.language.name))
+        assertFalse(request.containsKey("store"))
+        assertEquals("deepseek-chat", request.getValue("model").jsonPrimitive.content)
+        assertTrue(request.getValue("messages").jsonArray.first().jsonObject.getValue("content").jsonPrimitive.content.contains(vm.language.name))
     }
     private fun pause() {
         compose.waitForIdle()
@@ -222,10 +222,68 @@ class CaptionParityTest {
         }
     }
 
+    @Test fun idleConversationCanStartFromTheWriteButtonWithoutVoice() {
+        compose.runOnIdle { vm.resetConversation() }
+        response = "Hola, Carlos."
+        compose.onNodeWithContentDescription(compose.activity.getString(R.string.talk_type_button)).performClick()
+        compose.onNodeWithTag("typed-reply-input").performTextInput("Me llamo Carlos.")
+        compose.onNodeWithTag("typed-reply-send").performClick()
+        compose.waitUntil(10_000) { vm.typedRepliesSent == 1 }
+        compose.runOnIdle {
+            assertEquals("active", vm.state)
+            assertFalse(vm.isVoiceSession)
+            assertEquals(listOf("Me llamo Carlos."), vm.session!!.fragments.filter { it.speaker == Speaker.user }.map { it.text })
+            assertEquals(response, vm.session!!.fragments.last { it.speaker == Speaker.assistant }.text)
+        }
+    }
+
+    @Test fun endedAndFailedConversationsStillOfferTheWriteComposer() {
+        for (endState in listOf("ended", "failed")) {
+            show("es", "Hola.", "Hello.")
+            compose.runOnIdle { state("state", endState) }
+            compose.onNodeWithContentDescription(compose.activity.getString(R.string.talk_type_button)).performClick()
+            compose.onNodeWithTag("typed-reply-input").assertIsDisplayed()
+            compose.onNodeWithContentDescription(compose.activity.getString(R.string.common_close)).performClick()
+        }
+    }
+
+    @Test fun failedRecognitionPreservesTheConversationAndAllowsATextReply() =
+        assertVoiceFailureAllowsText(AndroidVoiceTransport.RecognitionException("Language model unavailable"))
+
+    @Test fun unavailablePlaybackPreservesTheConversationAndAllowsATextReply() =
+        assertVoiceFailureAllowsText(AndroidVoiceTransport.TransportException("Android denied audio playback"))
+
+    private fun assertVoiceFailureAllowsText(failure: AndroidVoiceTransport.TransportException) {
+        show("es", "Hola.", "Hello.")
+        val id = vm.session!!.id
+        compose.runOnIdle {
+            MuralViewModel::class.java.getDeclaredField("voiceSession").apply { isAccessible = true }.setBoolean(vm, true)
+            val voice = MuralViewModel::class.java.getDeclaredField("transport").apply { isAccessible = true }.get(vm) as AndroidVoiceTransport
+            voice.onAudioPaused!!.invoke(true)
+            voice.onFailure!!.invoke(failure)
+            assertFalse(vm.isAudioPaused)
+            assertNull(vm.error)
+            assertEquals("active", vm.state)
+            assertFalse(vm.isVoiceSession)
+            assertEquals(id, vm.session!!.id)
+            assertNull(vm.session!!.endedAt)
+            assertTrue(vm.notice!!.contains(failure.message!!))
+        }
+        response = "Encantado, Carlos."
+        compose.onNodeWithContentDescription(compose.activity.getString(R.string.talk_type_button)).performClick()
+        compose.onNodeWithTag("typed-reply-input").performTextInput("Soy Carlos.")
+        compose.onNodeWithTag("typed-reply-send").performClick()
+        compose.waitUntil(10_000) { vm.typedRepliesSent == 1 }
+        compose.runOnIdle {
+            assertEquals(id, vm.session!!.id)
+            assertEquals(listOf("Hola.", "Soy Carlos.", response), vm.session!!.fragments.map { it.text })
+        }
+    }
+
     @Test fun typedReplyFailureRetriesWithoutDuplicateTranscriptRows() {
         show("es", "Hola.", "Hello.")
         responseCode = 503
-        val typeButton = compose.onNodeWithText(compose.activity.getString(R.string.talk_type_button))
+        val typeButton = compose.onNodeWithContentDescription(compose.activity.getString(R.string.talk_type_button))
         if (!typeButton.isDisplayed()) typeButton.performScrollTo()
         typeButton.performClick()
         compose.onNodeWithTag("typed-reply-input").performTextInput("Quiero un café.")
@@ -247,7 +305,7 @@ class CaptionParityTest {
     @Test fun typedReplyAuthenticationFailureKeepsRecoveryActionAndDraft() {
         show("es", "Hola.", "Hello.")
         responseCode = 401
-        val typeButton = compose.onNodeWithText(compose.activity.getString(R.string.talk_type_button))
+        val typeButton = compose.onNodeWithContentDescription(compose.activity.getString(R.string.talk_type_button))
         if (!typeButton.isDisplayed()) typeButton.performScrollTo()
         typeButton.performClick()
         compose.onNodeWithTag("typed-reply-input").performTextInput("Quiero un café.")
@@ -275,7 +333,7 @@ class CaptionParityTest {
         }
         compose.waitUntil(10_000) { vm.meaning == response }
         val request = Json.parseToJsonElement(checkNotNull(requests.poll(2, TimeUnit.SECONDS))).jsonObject
-        assertEquals(caption, request.getValue("input").jsonArray.single().jsonObject.getValue("content").jsonPrimitive.content)
+        assertEquals(caption, request.getValue("messages").jsonArray.last().jsonObject.getValue("content").jsonPrimitive.content)
         compose.runOnIdle {
             val passage = vm.session!!.passages.single()
             assertEquals(response, vm.session!!.translations[MeaningRequest.cacheKey(passage.revisionKey, "English")])

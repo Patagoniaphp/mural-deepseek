@@ -134,12 +134,16 @@ fun TalkScreen(
         Spacer(Modifier.height(if (compact) 8.dp else 24.dp - 16.dp * readingSpace))
         MuralOrb(
             energy = maxOf(vm.outputLevel.toFloat(), vm.inputLevel.toFloat() * .45f),
-            listening = vm.state == "active" && vm.isVoiceSession && !vm.isMuted,
+            listening = vm.state == "active" && vm.isVoiceSession && !vm.isMuted && !vm.working,
             active = vm.state != "closing",
             modifier = Modifier.size(orbSize),
         )
         Box(Modifier.fillMaxWidth().padding(top = if (compact) 8.dp else 12.dp).heightIn(min = 40.dp), contentAlignment = Alignment.Center) {
-            val status = statusText(vm.state, vm.isMuted, vm.isVoiceSession, vm.inactivitySeconds)
+            val status = if (vm.state == "active" && vm.isVoiceSession && vm.isAudioPaused)
+                stringResource(R.string.talk_status_audio_paused)
+            else if (vm.state == "active" && vm.isVoiceSession && vm.working)
+                stringResource(if (vm.outputLevel > 0.0) R.string.talk_status_speaking else R.string.talk_status_thinking)
+            else statusText(vm.state, vm.isMuted, vm.isVoiceSession, vm.inactivitySeconds)
             val statusCaption = buildAnnotatedString {
                 if (vm.inactivitySeconds != null) {
                     withStyle(SpanStyle(fontWeight = FontWeight.Medium, fontFeatureSettings = "tnum")) { append(status.substringBefore('\n')) }
@@ -250,17 +254,15 @@ fun TalkScreen(
                     modifier = Modifier.size(30.dp))
             }
             Spacer(Modifier.width(when { scrollPage -> 12.dp; compact -> 20.dp; else -> 27.dp }))
-            RoundAction(if (vm.isRunning) MuralSymbol.End else MuralSymbol.Transcript,
-                stringResource(if (vm.isRunning) R.string.talk_end_label else R.string.talk_transcript_label),
-                enabled = vm.session != null, onClick = { if (vm.isRunning) vm.end() else transcript = vm.session })
+            RoundAction(MuralSymbol.Keyboard, stringResource(R.string.talk_type_button),
+                enabled = !busy && !vm.working, onClick = { typing = true })
         }
-        Text(stringResource(if (vm.state == "active" && vm.isVoiceSession && !vm.isMuted) R.string.talk_microphone_on else R.string.talk_microphone_off),
+        Text(stringResource(if (vm.state == "active" && vm.isVoiceSession && !vm.isMuted && !vm.working) R.string.talk_microphone_on else R.string.talk_microphone_off),
             style = MaterialTheme.typography.bodySmall, color = MuralColors.Secondary, modifier = Modifier.padding(top = 6.dp))
-        if (vm.state == "active" || microphoneMessage != null) {
+        if (vm.isRunning) {
             Row(horizontalArrangement = Arrangement.spacedBy(18.dp), verticalAlignment = Alignment.CenterVertically) {
-                MuralTextButton(onClick = { typing = true }, enabled = !busy && !vm.working) {
-                    MuralIcon(MuralSymbol.Keyboard, Modifier.size(15.dp)); Spacer(Modifier.width(6.dp))
-                    Text(stringResource(R.string.talk_type_button), style = MaterialTheme.typography.bodySmall, color = MuralColors.Ink)
+                MuralTextButton(onClick = { vm.end() }, enabled = vm.state != "closing") {
+                    Text(stringResource(R.string.talk_end_label), style = MaterialTheme.typography.bodySmall, color = MuralColors.Ink)
                 }
                 if (vm.state == "active") MuralTextButton(onClick = onHelp, enabled = !vm.working) {
                     MuralIcon(MuralSymbol.Sparkles, Modifier.size(15.dp)); Spacer(Modifier.width(6.dp))
@@ -272,6 +274,9 @@ fun TalkScreen(
                 color = MuralColors.Secondary, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 7.dp, bottom = 8.dp))
         }
 
+        if (vm.session?.passages?.isNotEmpty() == true) MuralTextButton(onClick = { transcript = vm.session }) {
+            Text(stringResource(R.string.talk_view_conversation), style = MaterialTheme.typography.bodySmall)
+        }
         microphoneMessage?.let {
             Text(it, color = MuralColors.Secondary, textAlign = TextAlign.Center, style = MaterialTheme.typography.bodySmall)
             if (onOpenAppSettings != null) MuralTextButton(onClick = onOpenAppSettings) { Text(stringResource(R.string.talk_open_phone_settings)) }
@@ -315,7 +320,8 @@ private fun RoundAction(symbol: MuralSymbol, label: String, selected: Boolean = 
     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         SoftRoundButton(symbol, label, onClick, tint = if (selected) MuralColors.Butter.copy(alpha = .70f) else Color.White.copy(alpha = .72f),
             enabled = enabled, filledIcon = selected)
-        Text(label, style = MaterialTheme.typography.labelSmall, color = MuralColors.Ink.copy(alpha = if (enabled) 1f else .45f))
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MuralColors.Ink.copy(alpha = if (enabled) 1f else .45f),
+            modifier = Modifier.clickable(enabled = enabled, role = Role.Button, onClick = onClick))
     }
 }
 

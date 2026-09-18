@@ -2,7 +2,7 @@
 
 ## Personal installation
 
-You need Android 8.0 or later and an OpenAI project key with access to the models Mural uses. A ChatGPT subscription does not include API credit.
+You need Android 8.0 or later and a DeepSeek API key with available API balance. Voice additionally needs a speech-recognition service and a text-to-speech voice for your learning language.
 
 Install the generated APK (`apps/android/app/build/outputs/apk/debug/app-debug.apk`) by opening it on the phone and allowing the installation, or from a computer:
 
@@ -24,13 +24,13 @@ If `apps/android/.signing/debug.keystore` exists (it is ignored by Git), the deb
 
 Mural speaks the interface language of your phone: Spanish on a Spanish phone, English otherwise. That is separate from the language you practise and the language you read meanings in, which you choose next.
 
-Choose the language you practise and the language for meanings. When you practise Mandarin, captions link each word and show pinyin underneath on Android 10 or later; **Hide pinyin** keeps the characters only. Read the consent to send audio and text to OpenAI. You can decline and still browse your local data.
+Choose the language you practise and the language for meanings. When you practise Mandarin, captions link each word and show pinyin underneath on Android 10 or later; **Hide pinyin** keeps the characters only. Read the updated consent: selected text and speech transcripts go to DeepSeek; Android speech services handle audio and may use their own servers. You can decline and still browse your local data.
 
-In **Settings**, save your own OpenAI key. Do not send it through chat or put it in repository files. It is encrypted with an Android Keystore key and is never included in learning backups.
+In **Settings → Use your own API key**, save your own DeepSeek key. Previously saved OpenAI keys are not reused. Do not send it through chat or put it in repository files. It is encrypted with an Android Keystore key and is never included in learning backups.
 
 On **Talk**, start a conversation and allow the microphone. You should hear a greeting in the language you chose. **Type instead** lets you practise without the microphone. You can mute, ask for a little help, show meanings, tap a word to look it up, and end the conversation. Any conversation ends when the app moves to the background. A voice conversation also ends when audio is interrupted, when it reaches the chosen duration, or after 30 seconds of quiet, with a gentle check-in and a five-second countdown. Speaking or typing gives you time to continue; waiting for an answer also receives a bounded grace period; a written conversation stays open while you compose a reply.
 
-Mural needs the internet to talk, translate and search. History and vocabulary are available offline. Requests are billed to your OpenAI project; **Settings** shows recorded voice time and a voice cost estimate. The app's time limit is not a billing cap.
+Mural needs the internet for DeepSeek replies, meanings and evaluations. History and vocabulary are available offline. DeepSeek bills input/output tokens; Settings links to its usage dashboard. The time limit is not a spending cap. Web search and hosted minute purchases are disabled in this Android variant.
 
 ## Move data from iPhone
 
@@ -56,21 +56,23 @@ cd apps/android
 ./gradlew :app:connectedUiTestAndroidTest
 ```
 
-The interface tests install as a separate app, `chat.mural.android.uitest`, so they never read or change the data of your Mural installation. They do not need an API key and do not call OpenAI.
+The interface tests install as a separate app, `chat.mural.android.uitest`, so they never read or change the data of your Mural installation. They do not need an API key and do not call DeepSeek.
 
 ## Troubleshooting
 
 - **ADB shows `unauthorized`:** unlock the phone and accept the debugging authorization.
 - **No device is listed:** check the cable, File transfer mode and USB debugging.
 - **Microphone blocked:** Android Settings → Apps → Mural → Permissions → Microphone. You can also type.
-- **Sound plays on the speaker with a Bluetooth headset:** connect the headset before starting the conversation. Mural chooses a connected headset on Android 12 or later; on Android 8–11 it uses the speaker.
-- **Key rejected or usage limit reached:** check the key, model access and project limits in your OpenAI account. Mural never needs you to share your key with anyone.
+- **Sound plays on the speaker with a Bluetooth headset:** connect the headset before starting the conversation. Audio routing follows the installed Android recognition and speech engines. Verify the chosen engine and audio route in Android settings.
+- **Key rejected or usage limit reached:** check the key, model access and balance and limits in your DeepSeek account. Mural never needs you to share your key with anyone.
 - **Switching to another app:** Mural ends a voice conversation to release the microphone. Come back and start another; history is kept.
 - **Backup error:** make sure it is a complete Mural file under 30 MB. The importer rejects a file before merging invalid records.
 - **Update rejected because of the signature:** use the same signing key as the previous installation. Export a backup before any uninstall.
 
 The architecture is described in [android/design.md](android/design.md); test results are recorded in [android-validation.md](../verification/android-validation.md).
 
-## Optional Mural account
+## DeepSeek variant
 
-Google account setup is documented in [Android accounts](android-accounts.md). It uses a separate, encrypted session and keeps learning history local. Hosted conversations and minute purchases are still in development.
+This Android build disables the legacy managed origin, Google sign-in and hosted minute purchases even if old Gradle properties are present. It communicates directly with DeepSeek using your encrypted personal key. It requires no Mural server changes or deployment. iOS and the hosted server keep their existing backend.
+
+Voice uses alternating turns: wait while the answer is generated and spoken, then speak when the listening status appears. The microphone is closed during playback. On supported devices, on-device recognition is preferred; otherwise the selected Android recognition service may send audio to its own servers. Text conversations remain usable when voice services or language packs are unavailable.

@@ -34,31 +34,14 @@ class APIClient private constructor(
     private val readCredential: () -> String?,
     private val client: OkHttpClient = defaultClient(),
     private val baseUrl: HttpUrl = API_BASE_URL,
-) : TeachingClient, LiveSessionProvider {
+) : TeachingClient {
     constructor(credentials: CredentialStore) : this(credentials::read)
 
     internal constructor(key: String?, client: OkHttpClient, baseUrl: HttpUrl) :
         this({ key }, client, baseUrl)
 
-    override suspend fun createLiveSession(request: LiveSessionRequest): LiveSessionConnection {
-        val result = post("live/sessions", buildJsonObject {
-            put("session", buildJsonObject {
-                put("model", "gpt-live-1"); put("instructions", request.instructions); put("input", request.history)
-                put("store", false)
-                put("delegation", buildJsonObject { put("type", "client") })
-                put("audio", buildJsonObject { put("output", buildJsonObject { put("voice", "marin") }) })
-            })
-            put("transport", buildJsonObject { put("type", "webrtc"); put("sdp", request.sdp) })
-        })
-        val transport = result["transport"] as? JsonObject ?: throw APIException.InvalidResponse
-        val answer = (transport["sdp"] as? JsonPrimitive)?.takeIf { it.isString }?.contentOrNull
-        if (transport["type"] != JsonPrimitive("webrtc") || answer.isNullOrBlank()) throw APIException.InvalidResponse
-        val id = ((result["session"] as? JsonObject)?.get("id") as? JsonPrimitive)?.takeIf { it.isString }?.contentOrNull
-        return LiveSessionConnection(answer, id)
-    }
-
-    suspend fun post(path: String, body: JsonObject): JsonObject {
-        if (!VALID_PATH.matches(path) || path.contains("..") || path.startsWith('/')) {
+    internal suspend fun post(path: String, body: JsonObject): JsonObject {
+        if (path != "chat/completions") {
             throw APIException.InvalidResponse
         }
         val key = readCredential() ?: throw APIException.MissingKey
@@ -110,37 +93,43 @@ class APIClient private constructor(
         search: Boolean,
         purpose: HelperPurpose?,
     ): APIResult {
+        if (search) throw APIException.SearchUnavailable
+        return complete(instructions, buildJsonArray {
+            add(buildJsonObject { put("role", "user"); put("content", input) })
+        }, schema)
+    }
+
+    /** Voice turns use the same text-only endpoint, with explicit conversation roles. */
+    internal suspend fun converse(instructions: String, messages: kotlinx.serialization.json.JsonArray): APIResult =
+        complete(instructions, messages, null)
+
+    private suspend fun complete(
+        instructions: String,
+        messages: kotlinx.serialization.json.JsonArray,
+        schema: JsonObject?,
+    ): APIResult {
+        val system = if (schema == null) instructions else
+            instructions + "\nReturn only a JSON object matching this JSON schema:\n" + schema.toString()
         val body = buildJsonObject {
-            put("model", "gpt-5.6-luna")
-            put("store", false)
-            put("instructions", instructions)
-            put("input", buildJsonArray {
-                add(buildJsonObject {
-                    put("role", "user")
-                    put("content", input)
-                })
+            put("model", "deepseek-chat")
+            put("messages", buildJsonArray {
+                add(buildJsonObject { put("role", "system"); put("content", system) })
+                messages.forEach { add(it) }
             })
-            put("max_output_tokens", if (schema == null) 1_400 else 2_200)
-            put("reasoning", buildJsonObject { put("effort", "low") })
+            put("stream", false)
+            put("max_tokens", if (schema == null) 1_400 else 2_200)
             if (schema != null) {
-                put("text", buildJsonObject {
-                    put("format", buildJsonObject {
-                        put("type", "json_schema")
-                        put("name", "mural_result")
-                        put("strict", true)
-                        put("schema", schema)
-                    })
-                })
-            }
-            if (search) {
-                put("tools", buildJsonArray { add(buildJsonObject { put("type", "web_search") }) })
-                put("tool_choice", "auto")
-                put("max_tool_calls", 1)
+                put("response_format", buildJsonObject { put("type", "json_object") })
             }
         }
-
-        val response = post("responses", body)
-        return decodeTeachingResponse(response)
+        val result = decodeTeachingResponse(post("chat/completions", body))
+        // JSON mode guarantees syntax, not the assessment schema used by the learning engine.
+        if (schema != null) {
+            val value = try { JSON.parseToJsonElement(result.text) }
+                catch (_: Exception) { throw APIException.InvalidResponse }
+            if (!matchesTeachingSchema(value, schema)) throw APIException.InvalidResponse
+        }
+        return result
     }
 
     private fun Response.readBoundedBody(): String {
@@ -159,22 +148,24 @@ class APIClient private constructor(
     }
 
     sealed class APIException(message: String, cause: Throwable? = null) : IOException(message, cause) {
-        data object MissingKey : APIException("Add your OpenAI key in Settings to begin.")
-        data object InvalidResponse : APIException("OpenAI returned an incomplete response. Please try again.")
-        data object Incomplete : APIException("OpenAI returned an incomplete response. Please try again.")
+        data object SearchUnavailable : APIException("Web search is not available with DeepSeek.")
+        data object MissingKey : APIException("Add your DeepSeek key in Settings to begin.")
+        data object InvalidResponse : APIException("DeepSeek returned an incomplete response. Please try again.")
+        data object Incomplete : APIException("DeepSeek returned an incomplete response. Please try again.")
         data object Refused : APIException("Mural couldn't complete that request. Try a different topic.")
         class Http(val status: Int, code: String? = null, reference: String? = null) : APIException(messageFor(status)) {
             val code = ProviderFailureKind.safeCode(code)
             val reference = ProviderFailureKind.safeReference(reference)
-            val kind get() = ProviderFailureKind.classify(status, code)
+            val kind get() = if (status == 402) ProviderFailureKind.quota else ProviderFailureKind.classify(status, code)
         }
 
         companion object {
             private fun messageFor(status: Int): String = when (status) {
-                401 -> "Your OpenAI key wasn't accepted. Check it in Settings."
-                403, 404 -> "This API key may not have access to the requested model. Check your OpenAI project."
-                429 -> "OpenAI's usage or rate limit was reached. Check your project billing and limits."
-                else -> "OpenAI couldn't complete the request (HTTP $status). Please try again."
+                401 -> "Your DeepSeek key wasn't accepted. Check it in Settings."
+                403, 404 -> "This API key may not have access to the requested model. Check your DeepSeek project."
+                402 -> "Your DeepSeek account has insufficient balance. Check your API billing."
+                429 -> "DeepSeek's usage or rate limit was reached. Check your project billing and limits."
+                else -> "DeepSeek couldn't complete the request (HTTP $status). Please try again."
             }
         }
     }
@@ -182,12 +173,10 @@ class APIClient private constructor(
     companion object {
         private val API_BASE_URL = HttpUrl.Builder()
             .scheme("https")
-            .host("api.openai.com")
-            .addPathSegment("v1")
+            .host("api.deepseek.com")
             .addPathSegment("")
             .build()
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
-        private val VALID_PATH = Regex("[a-z0-9][a-z0-9_/-]*")
         private const val MAX_RESPONSE_BYTES = 1_048_576L
         private val JSON = Json { ignoreUnknownKeys = true }
 

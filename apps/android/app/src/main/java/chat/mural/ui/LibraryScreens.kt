@@ -69,8 +69,8 @@ fun TopicsScreen(vm: MuralViewModel, onChoose: () -> Unit, onCurrentTopic: (Stri
     var search by rememberSaveable { mutableStateOf("") }
     var category by rememberSaveable { mutableStateOf("All") }
     var current by rememberSaveable { mutableStateOf(false) }
-    val categories = remember(vm.language.id) { listOf("All") + vm.language.themes.map { it.category }.distinct() }
-    val themes = vm.language.themes.filter {
+    val categories = remember(vm.language.id) { listOf("All") + vm.language.themes.filter { it.id != "today" }.map { it.category }.distinct() }
+    val themes = vm.language.themes.filter { it.id != "today" }.filter {
         (category == "All" || it.category == category) &&
             (search.isBlank() || it.title.contains(search, true) || it.subtitle.contains(search, true) || it.category.contains(search, true))
     }

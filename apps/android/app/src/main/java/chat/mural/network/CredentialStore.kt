@@ -10,7 +10,7 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
-/** Stores the OpenAI API key encrypted by a non-exportable Android Keystore key. */
+/** Stores the DeepSeek API key encrypted by a non-exportable Android Keystore key. */
 class CredentialStore internal constructor(
     context: Context,
     preferencesName: String,
@@ -108,17 +108,17 @@ class CredentialStore internal constructor(
     }
 
     sealed class CredentialException(message: String) : IllegalStateException(message) {
-        data object Invalid : CredentialException("Enter a valid OpenAI API key.")
+        data object Invalid : CredentialException("Enter a valid DeepSeek API key.")
         data object Save : CredentialException("The key couldn't be saved securely on this device.")
         data object Remove : CredentialException("The key couldn't be removed. Unlock this device and try again.")
     }
 
     companion object {
         // The app excludes all shared preferences from cloud backup and device transfer.
-        private const val PREFERENCES = "mural_openai_credentials"
+        private const val PREFERENCES = "mural_deepseek_credentials"
         private const val CIPHERTEXT = "ciphertext"
         private const val IV = "iv"
-        private const val KEY_ALIAS = "chat.mural.openai.aes"
+        private const val KEY_ALIAS = "chat.mural.deepseek.aes"
         private const val ANDROID_KEY_STORE = "AndroidKeyStore"
         private const val TRANSFORMATION = "AES/GCM/NoPadding"
         private const val GCM_TAG_BITS = 128

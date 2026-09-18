@@ -4,12 +4,9 @@ import android.content.Context
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.util.UUID
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.webrtc.*
 
 @RunWith(AndroidJUnit4::class)
 class NativeCompatibilityTest {
@@ -30,44 +27,18 @@ class NativeCompatibilityTest {
         } finally { store.delete() }
     }
 
-    @Test fun nativeWebRtcBuildsAnAudioAndDataOfferWithoutMicrophoneOrInternet() {
+    @Test fun legacyProviderKeyIsNotLoadedAsADeepSeekCredential() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        PeerConnectionFactory.initialize(PeerConnectionFactory.InitializationOptions.builder(context).createInitializationOptions())
-        val factory = PeerConnectionFactory.builder().createPeerConnectionFactory()
-        val peer = factory.createPeerConnection(PeerConnection.RTCConfiguration(emptyList()).apply {
-            sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
-        }, object : PeerConnection.Observer {
-            override fun onSignalingChange(state: PeerConnection.SignalingState) {}
-            override fun onIceConnectionChange(state: PeerConnection.IceConnectionState) {}
-            override fun onIceConnectionReceivingChange(receiving: Boolean) {}
-            override fun onIceGatheringChange(state: PeerConnection.IceGatheringState) {}
-            override fun onIceCandidate(candidate: IceCandidate) {}
-            override fun onIceCandidatesRemoved(candidates: Array<out IceCandidate>) {}
-            override fun onAddStream(stream: MediaStream) {}
-            override fun onRemoveStream(stream: MediaStream) {}
-            override fun onDataChannel(channel: DataChannel) {}
-            override fun onRenegotiationNeeded() {}
-            override fun onAddTrack(receiver: RtpReceiver, streams: Array<out MediaStream>) {}
-        })!!
-        var channel: DataChannel? = null
+        check(context.packageName.endsWith(".uitest"))
+        val legacy = CredentialStore(context, "mural_openai_credentials", "chat.mural.openai.aes")
+        val current = CredentialStore(context)
         try {
-            peer.addTransceiver(MediaStreamTrack.MediaType.MEDIA_TYPE_AUDIO, RtpTransceiver.RtpTransceiverInit(RtpTransceiver.RtpTransceiverDirection.RECV_ONLY))
-            channel = peer.createDataChannel("oai-events", DataChannel.Init().apply { ordered = true })
-            val ready = CountDownLatch(1)
-            var result: SessionDescription? = null
-            var failure: String? = null
-            peer.createOffer(object : SdpObserver {
-                override fun onCreateSuccess(description: SessionDescription) { result = description; ready.countDown() }
-                override fun onCreateFailure(message: String) { failure = message; ready.countDown() }
-                override fun onSetSuccess() {}
-                override fun onSetFailure(message: String) {}
-            }, MediaConstraints())
-            assertTrue("SDP timed out", ready.await(10, TimeUnit.SECONDS))
-            assertNull(failure)
-            assertTrue(result!!.description.contains("m=audio"))
-            assertTrue(result!!.description.contains("m=application"))
-        } finally {
-            channel?.close(); channel?.dispose(); peer.close(); peer.dispose(); factory.dispose()
-        }
+            current.delete()
+            legacy.save("sk-offline-legacy-test-never-sent")
+            assertFalse(current.hasKey)
+            current.save("sk-offline-deepseek-test-never-sent")
+            assertEquals("sk-offline-deepseek-test-never-sent", current.read())
+            assertEquals("sk-offline-legacy-test-never-sent", legacy.read())
+        } finally { legacy.delete(); current.delete() }
     }
 }

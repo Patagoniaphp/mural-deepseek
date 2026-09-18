@@ -19,7 +19,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
-/** Separate from learning exports and OpenAI keys; app backup excludes these preferences. */
+/** Separate from learning exports and provider API keys; app backup excludes these preferences. */
 class AccountSessionStore(context: Context, origin: String) : AccountSessionStorage {
     private val preferences = context.applicationContext.getSharedPreferences("mural_account_session", Context.MODE_PRIVATE)
     private val binding = "${context.packageName}|$origin|v1".toByteArray(Charsets.UTF_8)
