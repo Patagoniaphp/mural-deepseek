@@ -124,7 +124,7 @@ class AndroidVoiceTransport(context: Context, private val scope: CoroutineScope)
             engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                 override fun onStart(id: String?) = Unit
                 override fun onDone(id: String?) { handler.post {
-                    if (current(token) && id == lastUtterance) {
+                    if (current(token) && id != null && id == lastUtterance) {
                         lastUtterance = null; utterancePrefix = null; pendingSpeech = null
                         speechTimeout?.cancel(); audioWaitJob?.cancel()
                         // Release before opening recognition, which may acquire its own audio focus.
