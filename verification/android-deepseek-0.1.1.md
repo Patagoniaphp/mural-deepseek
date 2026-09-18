@@ -1,5 +1,7 @@
 # Android DeepSeek 0.1.1: texto y recuperación de voz
 
+Versión posterior: [Android DeepSeek 0.1.2: interrupciones de audio](android-deepseek-0.1.2.md). Este documento conserva los resultados de 0.1.1.
+
 ## Cambios observables
 
 - «Escribir» está disponible desde el inicio, después de terminar y después de un fallo. Abre el editor de mensajes y permite iniciar una conversación sin micrófono.
