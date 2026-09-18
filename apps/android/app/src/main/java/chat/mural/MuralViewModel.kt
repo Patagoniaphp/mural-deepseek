@@ -118,6 +118,7 @@ class MuralViewModel(application: Application) : AndroidViewModel(application) {
     var meaningLimitReached by mutableStateOf(false); private set
     var working by mutableStateOf(false); private set
     var isMuted by mutableStateOf(false); private set
+    var isAudioPaused by mutableStateOf(false); private set
     var inputLevel by mutableStateOf(0.0); private set
     var outputLevel by mutableStateOf(0.0); private set
     var selectedTheme by mutableStateOf<ConversationTheme?>(null); private set
@@ -287,6 +288,7 @@ class MuralViewModel(application: Application) : AndroidViewModel(application) {
         }
         transport.onUsage = { usage -> if (state == "active") updateSession { addUsage(it, usage) } }
         transport.onBusy = { working = it }
+        transport.onAudioPaused = { isAudioPaused = it }
         transport.onClosed = { seconds -> updateSession { it.voiceSeconds = seconds }; finish(true) }
         transport.onFailure = ::voiceFailed
         transport.onLevels = { input, output ->
@@ -703,12 +705,12 @@ class MuralViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
     private fun voiceFailed(error: Throwable) {
-        if (error !is AndroidVoiceTransport.RecognitionException ||
+        if (error !is AndroidVoiceTransport.TransportException ||
             !voiceSession || state !in listOf("connecting", "active")) {
             fail(error, R.string.error_voice_connect_failed)
             return
         }
-        // Recognition is optional: retain this transcript and session for typed replies.
+        // Device audio is optional: retain this transcript and session for typed replies.
         updateSession { it.voiceSeconds = transport.elapsedSeconds }
         transport.disconnect(); connectionJob?.cancel()
         voiceSession = false; isMuted = false; working = false

@@ -139,7 +139,9 @@ fun TalkScreen(
             modifier = Modifier.size(orbSize),
         )
         Box(Modifier.fillMaxWidth().padding(top = if (compact) 8.dp else 12.dp).heightIn(min = 40.dp), contentAlignment = Alignment.Center) {
-            val status = if (vm.state == "active" && vm.isVoiceSession && vm.working)
+            val status = if (vm.state == "active" && vm.isVoiceSession && vm.isAudioPaused)
+                stringResource(R.string.talk_status_audio_paused)
+            else if (vm.state == "active" && vm.isVoiceSession && vm.working)
                 stringResource(if (vm.outputLevel > 0.0) R.string.talk_status_speaking else R.string.talk_status_thinking)
             else statusText(vm.state, vm.isMuted, vm.isVoiceSession, vm.inactivitySeconds)
             val statusCaption = buildAnnotatedString {
@@ -255,7 +257,7 @@ fun TalkScreen(
             RoundAction(MuralSymbol.Keyboard, stringResource(R.string.talk_type_button),
                 enabled = !busy && !vm.working, onClick = { typing = true })
         }
-        Text(stringResource(if (vm.state == "active" && vm.isVoiceSession && !vm.isMuted) R.string.talk_microphone_on else R.string.talk_microphone_off),
+        Text(stringResource(if (vm.state == "active" && vm.isVoiceSession && !vm.isMuted && !vm.working) R.string.talk_microphone_on else R.string.talk_microphone_off),
             style = MaterialTheme.typography.bodySmall, color = MuralColors.Secondary, modifier = Modifier.padding(top = 6.dp))
         if (vm.isRunning) {
             Row(horizontalArrangement = Arrangement.spacedBy(18.dp), verticalAlignment = Alignment.CenterVertically) {

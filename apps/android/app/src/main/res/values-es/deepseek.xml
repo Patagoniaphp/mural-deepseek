@@ -12,4 +12,8 @@
     <string name="error_android_recognition_busy">El servicio de voz de Android está ocupado. Cierra otras apps que usen el micrófono e intenta usar la voz más tarde.</string>
     <string name="notice_voice_continue_text">%1$s La voz se detuvo. Puedes continuar esta conversación con Escribir.</string>
     <string name="talk_view_conversation">Ver conversación</string>
+    <string name="error_android_audio_denied">Android no permitió reproducir la voz en este momento.</string>
+    <string name="error_android_audio_lost">Android interrumpió la reproducción de voz.</string>
+    <string name="error_android_audio_timeout">Android no volvió a permitir la reproducción de voz tras la espera.</string>
+    <string name="talk_status_audio_paused">Voz en pausa. Esperando el audio…</string>
 </resources>

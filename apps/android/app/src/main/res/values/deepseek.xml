@@ -12,4 +12,8 @@
     <string name="error_android_recognition_busy">The Android speech service is busy. Close other apps using the microphone and try voice again later.</string>
     <string name="notice_voice_continue_text">%1$s Voice has stopped. You can continue this conversation with Type instead.</string>
     <string name="talk_view_conversation">View conversation</string>
+    <string name="error_android_audio_denied">Android could not allow voice playback right now.</string>
+    <string name="error_android_audio_lost">Android interrupted voice playback.</string>
+    <string name="error_android_audio_timeout">Voice playback did not become available after waiting for Android.</string>
+    <string name="talk_status_audio_paused">Voice paused. Waiting for audio…</string>
 </resources>

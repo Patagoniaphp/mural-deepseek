@@ -36,6 +36,7 @@ class AndroidVoiceTransport(context: Context, private val scope: CoroutineScope)
     var onUsage: ((APIUsage) -> Unit)? = null
     var onClosed: ((Double) -> Unit)? = null
     var onBusy: ((Boolean) -> Unit)? = null
+    var onAudioPaused: ((Boolean) -> Unit)? = null
     var isBusy: Boolean = false; private set
 
     private val app = context.applicationContext
@@ -57,7 +58,33 @@ class AndroidVoiceTransport(context: Context, private val scope: CoroutineScope)
     private var recognizer: SpeechRecognizer? = null
     private var recognitionRecovery: SpeechRecognitionRecovery? = null
     private var tts: TextToSpeech? = null
-    private var focus: AudioFocusRequest? = null
+    private val audioAttributes = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ASSISTANT)
+        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
+    private var pendingSpeech: String? = null
+    private var audioWaitJob: Job? = null
+    private val playbackFocus = PlaybackAudioFocus(
+        createLease = { listener ->
+            val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+                .setAudioAttributes(audioAttributes)
+                .setWillPauseWhenDucked(true)
+                .setAcceptsDelayedFocusGain(true)
+                .setOnAudioFocusChangeListener({ change -> listener(change) }, handler).build()
+            object : PlaybackAudioFocus.Lease {
+                override fun request() = audio.requestAudioFocus(request)
+                override fun release() { audio.abandonAudioFocusRequest(request) }
+            }
+        },
+        onPlay = ::playPendingSpeech,
+        onPause = ::pauseSpeech,
+        onUnavailable = { reason ->
+            val resource = when (reason) {
+                PlaybackAudioFocus.Failure.DENIED -> R.string.error_android_audio_denied
+                PlaybackAudioFocus.Failure.LOST -> R.string.error_android_audio_lost
+                PlaybackAudioFocus.Failure.TIMED_OUT -> R.string.error_android_audio_timeout
+            }
+            fail(failure(resource))
+        },
+    )
     private var requestJob: Job? = null
     private var listenJob: Job? = null
     private var speechTimeout: Job? = null
@@ -80,20 +107,10 @@ class AndroidVoiceTransport(context: Context, private val scope: CoroutineScope)
         startedAt = SystemClock.elapsedRealtime()
         api = client; instructions = policy; language = locale
         try {
-            val attributes = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ASSISTANT)
-                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
-            val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
-                .setAudioAttributes(attributes)
-                .setOnAudioFocusChangeListener({ change ->
-                    if (current(token) && change < 0) fail(failure(R.string.error_transport_audio_stopped))
-                }, handler).build()
-            focus = request
-            if (audio.requestAudioFocus(request) != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
-                throw failure(R.string.error_transport_audio_stopped)
-            }
+            // Recognition manages its own focus. Request playback focus only when a reply is ready.
             val ready = CompletableDeferred<Int>()
             tts = TextToSpeech(app) { status -> ready.complete(status) }
-            if (withTimeout(15_000) { ready.await() } != TextToSpeech.SUCCESS) {
+            if (withTimeoutOrNull(15_000) { ready.await() } != TextToSpeech.SUCCESS) {
                 throw failure(R.string.error_android_speech)
             }
             ensureActive()
@@ -102,13 +119,16 @@ class AndroidVoiceTransport(context: Context, private val scope: CoroutineScope)
             if (engine.setLanguage(Locale.forLanguageTag(locale)) < TextToSpeech.LANG_AVAILABLE) {
                 throw failure(R.string.error_android_speech_language)
             }
-            engine.setAudioAttributes(attributes)
+            engine.setAudioAttributes(audioAttributes)
             engine.setSpeechRate(0.85f)
             engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                 override fun onStart(id: String?) = Unit
                 override fun onDone(id: String?) { handler.post {
                     if (current(token) && id == lastUtterance) {
-                        lastUtterance = null; speechTimeout?.cancel()
+                        lastUtterance = null; utterancePrefix = null; pendingSpeech = null
+                        speechTimeout?.cancel(); audioWaitJob?.cancel()
+                        // Release before opening recognition, which may acquire its own audio focus.
+                        playbackFocus.release(); onAudioPaused?.invoke(false)
                         onLevels?.invoke(0.0, 0.0); busy(false); scheduleListening()
                     }
                 } }
@@ -152,25 +172,57 @@ class AndroidVoiceTransport(context: Context, private val scope: CoroutineScope)
     fun speakReply(text: String) {
         if (!active) return
         stopRecognition()
+        stopSpeechPlayback(); audioWaitJob?.cancel()
         history.append("assistant", text)
         transcript("assistant", text)
+        pendingSpeech = text
         busy(true)
+        playbackFocus.acquire()
+    }
+
+    private fun playPendingSpeech() {
+        if (!active) return
+        val text = pendingSpeech ?: return
+        audioWaitJob?.cancel(); onAudioPaused?.invoke(false)
         val token = generation
         val chunks = text.chunked(TextToSpeech.getMaxSpeechInputLength().coerceAtLeast(1))
         val prefix = UUID.randomUUID().toString()
         utterancePrefix = prefix
         lastUtterance = "$prefix-${chunks.lastIndex}"
         onLevels?.invoke(0.0, 0.25)
-        chunks.forEachIndexed { index, chunk ->
-            if (tts?.speak(chunk, if (index == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD,
-                    null, "$prefix-$index") != TextToSpeech.SUCCESS) {
-                fail(failure(R.string.error_android_speech)); return
+        try {
+            chunks.forEachIndexed { index, chunk ->
+                if (tts?.speak(chunk, if (index == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD,
+                        null, "$prefix-$index") != TextToSpeech.SUCCESS) {
+                    fail(failure(R.string.error_android_speech)); return
+                }
             }
+        } catch (_: Exception) {
+            fail(failure(R.string.error_android_speech)); return
         }
         speechTimeout?.cancel()
         speechTimeout = scope.launch {
             delay(120_000)
             if (current(token) && lastUtterance != null) fail(failure(R.string.error_android_speech))
+        }
+    }
+
+    private fun stopSpeechPlayback() {
+        // TTS may report stopped work late. Invalidate its IDs before calling stop().
+        lastUtterance = null; utterancePrefix = null
+        speechTimeout?.cancel(); speechTimeout = null
+        runCatching { tts?.stop() }
+    }
+
+    private fun pauseSpeech() {
+        if (!active) return
+        stopSpeechPlayback()
+        onLevels?.invoke(0.0, 0.0); onAudioPaused?.invoke(true)
+        val token = generation
+        audioWaitJob?.cancel()
+        audioWaitJob = scope.launch {
+            delay(8_000)
+            if (current(token)) playbackFocus.expireWait()
         }
     }
 
@@ -295,10 +347,10 @@ class AndroidVoiceTransport(context: Context, private val scope: CoroutineScope)
         stopRecognition()
         recognitionRecovery = null
         requestJob?.cancel(); requestJob = null
-        speechTimeout?.cancel(); speechTimeout = null
-        lastUtterance = null
-        runCatching { tts?.stop() }; runCatching { tts?.shutdown() }; tts = null
-        focus?.let { runCatching { audio.abandonAudioFocusRequest(it) } }; focus = null
+        audioWaitJob?.cancel(); audioWaitJob = null
+        pendingSpeech = null; stopSpeechPlayback()
+        runCatching { tts?.shutdown() }; tts = null
+        playbackFocus.release(); onAudioPaused?.invoke(false)
         api = null; history.clear(); hints.clear(); muted = false; inputPaused = false
         onLevels?.invoke(0.0, 0.0); busy(false)
     }

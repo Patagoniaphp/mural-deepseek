@@ -247,18 +247,27 @@ class CaptionParityTest {
         }
     }
 
-    @Test fun failedRecognitionPreservesTheConversationAndAllowsATextReply() {
+    @Test fun failedRecognitionPreservesTheConversationAndAllowsATextReply() =
+        assertVoiceFailureAllowsText(AndroidVoiceTransport.RecognitionException("Language model unavailable"))
+
+    @Test fun unavailablePlaybackPreservesTheConversationAndAllowsATextReply() =
+        assertVoiceFailureAllowsText(AndroidVoiceTransport.TransportException("Android denied audio playback"))
+
+    private fun assertVoiceFailureAllowsText(failure: AndroidVoiceTransport.TransportException) {
         show("es", "Hola.", "Hello.")
         val id = vm.session!!.id
         compose.runOnIdle {
             MuralViewModel::class.java.getDeclaredField("voiceSession").apply { isAccessible = true }.setBoolean(vm, true)
             val voice = MuralViewModel::class.java.getDeclaredField("transport").apply { isAccessible = true }.get(vm) as AndroidVoiceTransport
-            voice.onFailure!!.invoke(AndroidVoiceTransport.RecognitionException("Language model unavailable"))
+            voice.onAudioPaused!!.invoke(true)
+            voice.onFailure!!.invoke(failure)
+            assertFalse(vm.isAudioPaused)
+            assertNull(vm.error)
             assertEquals("active", vm.state)
             assertFalse(vm.isVoiceSession)
             assertEquals(id, vm.session!!.id)
             assertNull(vm.session!!.endedAt)
-            assertTrue(vm.notice!!.contains("Language model unavailable"))
+            assertTrue(vm.notice!!.contains(failure.message!!))
         }
         response = "Encantado, Carlos."
         compose.onNodeWithContentDescription(compose.activity.getString(R.string.talk_type_button)).performClick()
